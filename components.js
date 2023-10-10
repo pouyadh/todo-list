@@ -1,13 +1,13 @@
 "use strict";
-let cnt = 0;
-let draggingList;
-let draggingListItem;
-const trackDragEnterLeave = (element, enterCallback, leaveCallback) => {
+var _a, _b, _c;
+const attachDragInOutEvents = (element) => {
+    const evDragIn = new Event("dragin");
+    const evDragOut = new Event("dragout");
     const track = new Map();
     const handleEnter = (ev) => {
         if (ev.target === element || element.contains(ev.target)) {
             if (track.size === 0) {
-                enterCallback(ev);
+                element.dispatchEvent(evDragIn);
             }
             track.set(ev.target, true);
         }
@@ -15,293 +15,419 @@ const trackDragEnterLeave = (element, enterCallback, leaveCallback) => {
     const handleLeave = (ev) => {
         track.delete(ev.target);
         if (track.size === 0) {
-            leaveCallback(ev);
+            element.dispatchEvent(evDragOut);
         }
+    };
+    const handleEnd = (ev) => {
+        track.clear();
+        element.dispatchEvent(evDragOut);
     };
     const handleDrop = (ev) => {
         track.clear();
+        element.dispatchEvent(evDragOut);
     };
-    const removeListeners = () => {
+    const detachDragInOutEvents = () => {
         element.removeEventListener("dragenter", handleEnter);
         element.removeEventListener("dragleave", handleLeave);
+        element.removeEventListener("dragend", handleEnd);
         element.removeEventListener("drop", handleDrop);
     };
     element.addEventListener("dragenter", handleEnter);
     element.addEventListener("dragleave", handleLeave);
+    element.addEventListener("dragend", handleEnd);
     element.addEventListener("drop", handleDrop);
-    return removeListeners;
+    return detachDragInOutEvents;
 };
-const generateId = () => Date.now().toString() + (cnt++).toString();
+function q(elem, selector) {
+    return elem.querySelector(selector);
+}
 class TodoItem extends HTMLElement {
     constructor() {
         super();
-        this.callOnDisconnect = [];
+        this._elements = null;
+        this._eventListenners = [];
+        this._states = {
+            firstConnect: true,
+            todoState: 0,
+            editingMode: false,
+            text: TodoItem.DEFAULT_TODO_TEXT,
+        };
+        this._detachDragInOutEvents = null;
+    }
+    addEventListeners() {
+        this._eventListenners.forEach((ev) => ev[0].addEventListener(ev[1], ev[2]));
+        this._detachDragInOutEvents = attachDragInOutEvents(this);
+    }
+    removeEventListeners() {
+        this._eventListenners.forEach((ev) => ev[0].removeEventListener(ev[1], ev[2]));
+        if (this._detachDragInOutEvents) {
+            this._detachDragInOutEvents();
+        }
+    }
+    _updateUI() {
+        if (this._elements) {
+            this._elements.btnState.innerText =
+                TodoItem.STATES[this._states.todoState];
+            this.setAttribute("state", this._states.todoState.toString());
+            this._elements.spnText.innerText = this._states.text;
+            if (this._states.editingMode) {
+                this._elements.btnEdit.innerHTML =
+                    '<i class="fas fa-solid fa-check"></i>';
+                this._elements.spnText.setAttribute("hidden", "true");
+                this._elements.inpText.removeAttribute("hidden");
+            }
+            else {
+                this._elements.btnEdit.innerHTML = '<i class="fas fa-pencil-alt"></i>';
+                this._elements.spnText.removeAttribute("hidden");
+                this._elements.inpText.setAttribute("hidden", "true");
+            }
+        }
+    }
+    makeEditable() {
+        if (this._elements && !this._states.editingMode) {
+            this._elements.inpText.value = this._states.text;
+            this._states.editingMode = true;
+            this._updateUI();
+        }
+    }
+    makeNoneEditable(applyChanges = true) {
+        if (this._elements && this._states.editingMode) {
+            if (applyChanges) {
+                this._states.text = this._elements.inpText.value;
+            }
+            this._states.editingMode = false;
+            this._updateUI();
+        }
     }
     connectedCallback() {
-        console.log("connected", this.id);
         this.draggable = true;
-        this.innerHTML = `
-    <div class="todo-item__drop-area"></div>
-    <li class="todo-item__item">
-      <button class="todo-item__state">${TodoItem.STATES[+this.getAttribute("state")]}</button>
-      <span class="todo-item__text">${this.getAttribute("text")}</span>
-      <button class="todo-item__edit"><i class="fas fa-pencil-alt"></i></button>
-      <button class="todo-item__remove"><i class="fas fa-minus"></i></button>
-      <i class="todo-item__drag-handle fas fa-bars draggable"></i>
-    </li>
-    `;
-        const stateBtn = this.querySelector("button.todo-item__state");
-        const removeBtn = this.querySelector("button.todo-item__remove");
-        const editBtn = this.querySelector("button.todo-item__edit");
-        const dropArea = this.querySelector("div.todo-item__drop-area");
-        const handleDragEnter = (ev) => {
-            if ((draggingListItem === null || draggingListItem === void 0 ? void 0 : draggingListItem.element) &&
-                !(draggingListItem === null || draggingListItem === void 0 ? void 0 : draggingListItem.ignore.includes(this))) {
-                dropArea.classList.add("todo-item__drop-area--extended");
-            }
+        if (!this.innerHTML) {
+            this.innerHTML = TodoItem.TEMPLATE;
+        }
+        this._elements = {
+            btnState: q(this, "button.todo-item__state"),
+            spnText: q(this, "span.todo-item__text"),
+            inpText: q(this, "input.todo-item__input"),
+            btnEdit: q(this, "button.todo-item__edit"),
+            btnRemove: q(this, "button.todo-item__remove"),
+            icnDragHandle: q(this, "button.todo-item__drag-handle"),
+            divDropArea: q(this, "div.todo-item__drop-area"),
         };
-        const handleDragLeave = (ev) => {
-            dropArea.classList.remove("todo-item__drop-area--extended");
-        };
-        const removeTracker = trackDragEnterLeave(this, handleDragEnter, handleDragLeave);
-        this.addEventListener("drop", (ev) => {
-            var _a;
-            if ((draggingListItem === null || draggingListItem === void 0 ? void 0 : draggingListItem.element) &&
-                !(draggingListItem === null || draggingListItem === void 0 ? void 0 : draggingListItem.ignore.includes(this))) {
-                (_a = this.parentNode) === null || _a === void 0 ? void 0 : _a.insertBefore(draggingListItem === null || draggingListItem === void 0 ? void 0 : draggingListItem.element, this);
-            }
-            dropArea.classList.remove("todo-item__drop-area--extended");
-            draggingListItem = null;
-        });
-        this.addEventListener("dragover", (ev) => ev.preventDefault());
-        this.addEventListener("dragstart", (ev) => {
-            var _a;
-            draggingListItem = {
-                element: this,
-                ignore: [this],
-            };
-            if (((_a = this.nextElementSibling) === null || _a === void 0 ? void 0 : _a.tagName) === "TODO-ITEM") {
-                draggingListItem.ignore.push(this.nextElementSibling);
-            }
-        });
-        stateBtn.addEventListener("click", () => this.toggleState());
-        removeBtn.addEventListener("click", () => this.removeMe());
-        editBtn.addEventListener("click", () => this.editMe());
-        const removeListeners = () => { };
-        this.callOnDisconnect.push(removeTracker, removeListeners);
+        this._eventListenners = [
+            [this._elements.btnState, "click", () => this._handleBtnStateClick()],
+            [this._elements.btnEdit, "click", () => this._handleBtnEditClick()],
+            [this._elements.btnRemove, "click", () => this._handleBtnRemoveClick()],
+            [
+                this._elements.inpText,
+                "keyup",
+                (ev) => this._handleTextInputKeyDown(ev),
+            ],
+            [this, "dragin", () => this._handleDragIn()],
+            [this, "dragout", () => this._handleDragOut()],
+            [this, "drop", (ev) => this._handleDrop(ev)],
+        ];
+        if (this._states.firstConnect) {
+            this._updateUI();
+        }
+        this.addEventListeners();
+        this._states.firstConnect = false;
     }
     disconnectedCallback() {
-        console.log("disconnected", this.id);
+        this.removeEventListeners();
     }
-    toggleState() {
-        let state = +this.getAttribute("state");
-        state++;
-        if (state >= TodoItem.STATES.length) {
-            state = 0;
+    _handleBtnStateClick() {
+        this._states.todoState++;
+        if (this._states.todoState > 2) {
+            this._states.todoState = 0;
         }
-        this.setAttribute("state", state.toString());
-        const stateBtn = this.querySelector("button.todo-item__state");
-        stateBtn.innerHTML = TodoItem.STATES[state];
+        this._updateUI();
     }
-    removeMe() {
+    _handleBtnEditClick() {
+        if (this._elements) {
+            if (this._states.editingMode) {
+                this.makeNoneEditable(true);
+            }
+            else {
+                this.makeEditable();
+            }
+        }
+    }
+    _handleTextInputKeyDown(ev) {
+        if (ev.key === "Escape") {
+            this.makeNoneEditable(false);
+        }
+        else if (ev.key === "Enter") {
+            this.makeNoneEditable(true);
+        }
+    }
+    _handleBtnRemoveClick() {
+        this.removeEventListeners();
         this.remove();
     }
-    editMe() {
-        const li = this.querySelector("li");
-        const editBtn = this.querySelector("button.todo-item__edit");
-        let textSpn = this.querySelector("span.todo-item__text");
-        let textInp = this.querySelector("input.todo-item__text");
-        console.log(!!textSpn, !!textInp);
-        if (textSpn && !textInp) {
-            textInp = document.createElement("input");
-            textInp.className = "todo-item__text";
-            textInp.setAttribute("type", "text");
-            textInp.value = textSpn.innerHTML;
-            textSpn.remove();
-            li.insertBefore(textInp, editBtn);
-            editBtn.innerHTML = '<i class="fas fa-check"></i>';
+    setText(text) {
+        this._states.text = text;
+        this._updateUI();
+    }
+    _handleDragIn() {
+        var _d;
+        if (TodoItem.draggingTodoItem) {
+            (_d = this._elements) === null || _d === void 0 ? void 0 : _d.divDropArea.setAttribute("data-expanded", "true");
         }
-        else if (!textSpn && textInp) {
-            textSpn = document.createElement("span");
-            textSpn.className = "todo-item__text";
-            textSpn.innerHTML = textInp.value;
-            this.setAttribute("text", textInp.value);
-            textInp.remove();
-            li.insertBefore(textSpn, editBtn);
-            editBtn.innerHTML = `<i class="fas fa-pencil-alt">`;
+    }
+    _handleDragOut() {
+        var _d;
+        (_d = this._elements) === null || _d === void 0 ? void 0 : _d.divDropArea.removeAttribute("data-expanded");
+    }
+    _handleDrop(ev) {
+        var _d;
+        if (TodoItem.draggingTodoItem) {
+            (_d = this.parentNode) === null || _d === void 0 ? void 0 : _d.insertBefore(TodoItem.draggingTodoItem, this.nextSibling);
         }
     }
 }
+_a = TodoItem;
 TodoItem.STATES = ["TODO", "DOING", "DONE"];
+TodoItem.DEFAULT_TODO_TEXT = "Todo Item";
+TodoItem.TEMPLATE = `
+      <div class="todo-item__visible">
+        <span class="todo-item__status-line"></span>
+        <span class="todo-item__content">
+          <div class="todo-item__header">
+            <button class="todo-item__state"></button>
+            <span class="todo-item__header-spacer"></span>
+            <button class="todo-item__edit"><i class="fas fa-pencil-alt"></i></button>
+            <button class="todo-item__remove"><i class="fas fa-minus"></i></button>
+            <i class="todo-item__drag-handle fas fa-bars draggable"></i>
+          </div>
+          <div class="todo-item__body">
+            <span class="todo-item__text"></span>
+            <input class="todo-item__input" hidden />
+          </div>
+        </span>
+      </div>
+      <div class="todo-item__drop-area"></div>
+      `;
+(() => {
+    document.addEventListener("dragstart", (ev) => {
+        if (ev.target instanceof TodoItem) {
+            _a.draggingTodoItem = ev.target;
+            if (ev.dataTransfer) {
+                ev.dataTransfer.effectAllowed = "move";
+            }
+        }
+        else {
+            _a.draggingTodoItem = null;
+        }
+    });
+    document.addEventListener("dragend", (ev) => {
+        _a.draggingTodoItem = null;
+    });
+})();
 customElements.define("todo-item", TodoItem);
-class TodoListDropArea extends HTMLElement {
-    constructor() {
-        super();
-        this.callOnDisconnect = [];
-    }
-    connectedCallback() {
-        const handleDragEnter = (ev) => {
-            if (draggingList) {
-                this.classList.add("todo-list-drop-area--extended");
-            }
-        };
-        const handleDragLeave = (ev) => {
-            this.classList.remove("todo-list-drop-area--extended");
-        };
-        const handleDragOver = (ev) => {
-            if (draggingList) {
-                ev.preventDefault();
-            }
-        };
-        const handleDrop = (ev) => {
-            var _a;
-            if (draggingList) {
-                (_a = this.parentElement) === null || _a === void 0 ? void 0 : _a.insertBefore(draggingList.element, this);
-            }
-            this.classList.remove("todo-list-drop-area--extended");
-            draggingList = null;
-        };
-        this.addEventListener("dragenter", handleDragEnter);
-        this.addEventListener("dragleave", handleDragLeave);
-        this.addEventListener("dragover", handleDragOver);
-        this.addEventListener("drop", handleDrop);
-        const removeEventListenners = () => {
-            this.removeEventListener("dragenter", handleDragEnter);
-            this.removeEventListener("dragleave", handleDragLeave);
-            this.removeEventListener("dragover", handleDragOver);
-            this.removeEventListener("drop", handleDrop);
-        };
-        this.callOnDisconnect.push(removeEventListenners);
-    }
-    disconnectedCallback() {
-        this.callOnDisconnect.forEach((fn) => fn());
-    }
-}
-customElements.define("todo-list-drop-area", TodoListDropArea);
 class TodoList extends HTMLElement {
     constructor() {
         super();
-        this.callOnDisconnect = [];
-        this.dropArea = null;
+        this._elements = null;
+        this._eventListenners = [];
+        this._states = {
+            firstConnect: true,
+        };
+        this._detachDragInOutEvents = null;
+    }
+    addEventListeners() {
+        this._eventListenners.forEach((ev) => ev[0].addEventListener(ev[1], ev[2]));
+        this._detachDragInOutEvents = attachDragInOutEvents(this);
+    }
+    removeEventListeners() {
+        var _d;
+        this._eventListenners.forEach((ev) => ev[0].removeEventListener(ev[1], ev[2]));
+        (_d = this._detachDragInOutEvents) === null || _d === void 0 ? void 0 : _d.call(this);
     }
     connectedCallback() {
-        var _a;
         this.draggable = true;
-        if (this.innerHTML === "") {
-            this.innerHTML = `
-      <div class="todo-list__header">
-        <i class="fas fa-bars draggable"></i>
-        <span class="todo-list__name" contenteditable="true">My ToDo Lists</span>
-        <button class="todo-list__remove-btn" id="remove-list"><i class="fas fa-trash"></i></button>
-      </div>
-      
-      <ul class="todo-list__list">
-        
-        <li class="todo-list__add-item" id="add-item">
-          <div id="todo-item-drop-area" class="todo-list__drop-area"></div>
-          <input class="todo-list__add-item-inp" type="text" placeholder="Add something todo ..." />
-          <button class="todo-list__add-item-btn" id="add-item"><i class="fas fa-plus"></i></button>
-        </li>
-      </ul>
-    `;
+        if (!this.innerHTML) {
+            this.innerHTML = TodoList.TEMPLATE;
         }
-        this.setAttribute("data-id", generateId());
-        const addItemBtn = this.querySelector("button#add-item");
-        const removeListBtn = this.querySelector("button#remove-list");
-        const todoItemDropArea = this.querySelector("div#todo-item-drop-area");
-        const addItemLi = this.querySelector("li#add-item");
-        const todoListAddItemInput = this.querySelector("input.todo-list__add-item-inp");
-        const todoListName = this.querySelector("span.todo-list__name");
-        addItemBtn.addEventListener("click", () => this.addTodo());
-        removeListBtn.addEventListener("click", () => this.removeList());
-        const handleDragEnter = (ev) => {
-            if ((draggingListItem === null || draggingListItem === void 0 ? void 0 : draggingListItem.element) &&
-                !(draggingListItem === null || draggingListItem === void 0 ? void 0 : draggingListItem.ignore.includes(this))) {
-                todoItemDropArea.classList.add("todo-item__drop-area--extended");
-            }
+        this._elements = {
+            spnName: q(this, "span.todo-list__name"),
+            btnRemove: q(this, "button.todo-list__remove-btn"),
+            ulList: q(this, "ul.todo-list__list"),
+            inpAdd: q(this, "input.todo-list__add-inp"),
+            btnAdd: q(this, "button.todo-list__add-btn"),
+            divDropArea: q(this, "div.todo-list__drop-area"),
         };
-        const handleDragLeave = (ev) => {
-            todoItemDropArea.classList.remove("todo-item__drop-area--extended");
-        };
-        const removeTracker = trackDragEnterLeave(addItemLi, handleDragEnter, handleDragLeave);
-        addItemLi.addEventListener("dragover", (ev) => {
-            ev.preventDefault();
-        });
-        addItemLi.addEventListener("drop", (ev) => {
-            var _a;
-            console.log("drop");
-            if ((draggingListItem === null || draggingListItem === void 0 ? void 0 : draggingListItem.element) &&
-                !(draggingListItem === null || draggingListItem === void 0 ? void 0 : draggingListItem.ignore.includes(this))) {
-                console.log("drop-accepted");
-                (_a = addItemLi.parentNode) === null || _a === void 0 ? void 0 : _a.insertBefore(draggingListItem === null || draggingListItem === void 0 ? void 0 : draggingListItem.element, addItemLi);
-            }
-            todoItemDropArea.classList.remove("todo-item__drop-area--extended");
-            draggingListItem = null;
-        });
-        todoListName.addEventListener("keyup", (ev) => {
-            if (ev.key === "Escape") {
-                todoListName.blur();
-            }
-        });
-        todoListAddItemInput.addEventListener("keyup", (ev) => {
-            if (ev.key === "Enter") {
-                this.addTodo();
-            }
-        });
-        this.addEventListener("dragstart", (ev) => {
-            var _a;
-            if (ev.target === this) {
-                draggingList = {
-                    element: this,
-                    ignore: [],
-                };
-                (_a = document
-                    .querySelector("section#list-container")) === null || _a === void 0 ? void 0 : _a.classList.add("list-is-dragging");
-            }
-        });
-        this.addEventListener("dragend", (ev) => {
-            var _a;
-            (_a = document
-                .querySelector("section#list-container")) === null || _a === void 0 ? void 0 : _a.classList.remove("list-is-dragging");
-            draggingList = null;
-            draggingListItem = null;
-        });
-        this.callOnDisconnect.push(removeTracker);
-        this.dropArea = document.createElement("todo-list-drop-area");
-        (_a = this.parentElement) === null || _a === void 0 ? void 0 : _a.insertBefore(this.dropArea, this);
-    }
-    removeList() {
-        var _a;
-        (_a = this.dropArea) === null || _a === void 0 ? void 0 : _a.remove();
-        this.remove();
+        this._eventListenners = [
+            [
+                this._elements.spnName,
+                "keyup",
+                (ev) => this._handleNameKeyup(ev),
+            ],
+            [this._elements.btnRemove, "click", () => this._handleRemoveBtnClick()],
+            [
+                this._elements.inpAdd,
+                "keyup",
+                (ev) => this._handleAddInpKeyup(ev),
+            ],
+            [this._elements.btnAdd, "click", () => this._handleAddBtnClick()],
+            [this, "dragin", () => this._handleDragIn()],
+            [this, "dragout", () => this._handleDragOut()],
+            [this, "drop", (ev) => this._handleDrop(ev)],
+        ];
+        if (this._states.firstConnect) {
+            this._elements.spnName.innerText = TodoList.DEFAULT_TODO_LIST_NAME;
+        }
+        this.addEventListeners();
+        this._states.firstConnect = false;
     }
     disconnectedCallback() {
-        var _a;
-        (_a = this.dropArea) === null || _a === void 0 ? void 0 : _a.remove();
+        this.removeEventListeners();
     }
-    addTodo() {
-        const todoTextInput = this.querySelector(".todo-list__add-item-inp");
-        const todoList = this.querySelector(".todo-list__list");
-        const addLi = this.querySelector("li#add-item");
-        if (todoTextInput.value) {
-            const id = Date.now().toString();
-            const todoItem = document.createElement("todo-item");
-            todoItem.setAttribute("id", id);
-            todoItem.setAttribute("text", todoTextInput.value);
-            todoItem.setAttribute("createdAt", id);
-            todoItem.setAttribute("state", "0");
-            todoList.insertBefore(todoItem, addLi);
-            todoTextInput.value = "";
-            todoList.scrollTop = todoList.scrollHeight;
+    _handleNameKeyup(ev) {
+        var _d;
+        if (ev.key === "Escape") {
+            (_d = this._elements) === null || _d === void 0 ? void 0 : _d.spnName.blur();
+        }
+    }
+    _handleRemoveBtnClick() {
+        this.removeEventListeners();
+        this.remove();
+    }
+    _handleAddInpKeyup(ev) {
+        if (this._elements) {
+            if (ev.key === "Escape") {
+                this._elements.inpAdd.value = "";
+            }
+            else if (ev.key === "Enter") {
+                this.addTodo();
+            }
+        }
+    }
+    _handleAddBtnClick() {
+        this.addTodo();
+    }
+    addTodo(text) {
+        var _d;
+        if (this._elements) {
+            const _text = text || this._elements.inpAdd.value;
+            if (_text) {
+                const todoItem = document.createElement("todo-item");
+                todoItem.setText(_text);
+                (_d = this._elements) === null || _d === void 0 ? void 0 : _d.ulList.appendChild(todoItem);
+            }
+            this._elements.inpAdd.value = "";
+        }
+    }
+    _handleDragIn() {
+        var _d;
+        if (TodoList.draggingTodoList) {
+            (_d = this._elements) === null || _d === void 0 ? void 0 : _d.divDropArea.setAttribute("data-expanded", "true");
+        }
+    }
+    _handleDragOut() {
+        var _d;
+        (_d = this._elements) === null || _d === void 0 ? void 0 : _d.divDropArea.removeAttribute("data-expanded");
+    }
+    _handleDrop(ev) {
+        var _d;
+        if (TodoList.draggingTodoList) {
+            (_d = this.parentNode) === null || _d === void 0 ? void 0 : _d.insertBefore(TodoList.draggingTodoList, this.nextSibling);
         }
     }
 }
-TodoList.TODO_STATE = ["TODO", "DOING", "DONE"];
+_b = TodoList;
+TodoList.DEFAULT_TODO_LIST_NAME = "My Todo List";
+TodoList.TEMPLATE = `
+      <div class="todo-list__visible">
+        <div class="todo-list__header">
+            <i class="todo-list__drag-handle fas fa-bars draggable"></i>
+            <span class="todo-list__name" contenteditable="true"></span>
+            <button class="todo-list__remove-btn" id="remove-list"><i class="fas fa-trash-alt"></i></button>
+        </div>
+        <ul class="todo-list__list"></ul>
+        <div class="todo-list__add" id="add-item">
+            <input class="todo-list__add-inp" type="text" placeholder="Add something todo ..." />
+            <button class="todo-list__add-btn" id="add-item"><i class="fas fa-plus"></i></button>
+        </div> 
+      </div>
+      <div class="todo-list__drop-area"></div>
+      `;
+(() => {
+    document.addEventListener("dragstart", (ev) => {
+        if (ev.target instanceof TodoList) {
+            _b.draggingTodoList = ev.target;
+            if (ev.dataTransfer) {
+                ev.dataTransfer.effectAllowed = "move";
+            }
+        }
+        else {
+            _b.draggingTodoList = null;
+        }
+    });
+    document.addEventListener("dragend", (ev) => {
+        if (_b.draggingTodoList) {
+            _b.draggingTodoList = null;
+        }
+    });
+})();
 customElements.define("todo-list", TodoList);
-const btnAddList = document.querySelector("button#add-list");
-const secListContainer = document.querySelector("section#list-container");
-const addList = () => {
-    const newList = document.createElement("todo-list");
-    secListContainer === null || secListContainer === void 0 ? void 0 : secListContainer.insertBefore(newList, btnAddList);
-};
-btnAddList === null || btnAddList === void 0 ? void 0 : btnAddList.addEventListener("click", addList);
+class TodoListContainer extends HTMLElement {
+    constructor() {
+        super();
+        this._elements = null;
+        this._eventListenners = [];
+        this._states = {
+            draggingElement: null,
+        };
+    }
+    addEventListeners() {
+        this._eventListenners.forEach((ev) => ev[0].addEventListener(ev[1], ev[2]));
+    }
+    removeEventListeners() {
+        this._eventListenners.forEach((ev) => ev[0].removeEventListener(ev[1], ev[2]));
+    }
+    connectedCallback() {
+        if (!this.innerHTML) {
+            this.innerHTML = TodoListContainer.TEMPLATE;
+        }
+        this._elements = {
+            ulList: q(this, "ul.todo-list-container__list"),
+            btnAdd: q(this, "button.todo-list-container__add-btn"),
+        };
+        this._eventListenners = [
+            [this, "dragover", (ev) => this._handleDragOver(ev)],
+            [this._elements.btnAdd, "click", () => this._handleAddBtnClick()],
+        ];
+        this.addEventListeners();
+    }
+    disconnectedCallback() {
+        this.removeEventListeners();
+    }
+    _handleAddBtnClick() {
+        if (this._elements) {
+            const todoList = document.createElement("todo-list");
+            this._elements.ulList.appendChild(todoList);
+        }
+    }
+    _handleDragOver(ev) {
+        if (TodoListContainer.draggingTodoElement) {
+            ev.preventDefault();
+        }
+    }
+}
+_c = TodoListContainer;
+TodoListContainer.TEMPLATE = `
+    <button class="todo-list-container__add-btn btn-cta"><i class="fas fa-plus"></i> Add List</button>
+    <ul class="todo-list-container__list"></ul>
+    `;
+(() => {
+    document.addEventListener("dragstart", (ev) => {
+        _c.draggingTodoElement =
+            ev.target instanceof TodoList || ev.target instanceof TodoItem
+                ? ev.target
+                : null;
+    });
+    document.addEventListener("dragend", (ev) => {
+        _c.draggingTodoElement = null;
+    });
+})();
+customElements.define("todo-list-container", TodoListContainer);
